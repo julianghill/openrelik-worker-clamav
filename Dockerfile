@@ -7,9 +7,16 @@ RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selectio
 
 # Install poetry and any other dependency that your worker needs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    clamav \
+    clamav-daemon \
+    clamav-freshclam \
     curl \
-    # Add your dependencies here
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Update virus definitions during build; ignore failures to allow offline builds.
+RUN freshclam || true
 
 # Configure debugging
 ARG OPENRELIK_PYDEBUG

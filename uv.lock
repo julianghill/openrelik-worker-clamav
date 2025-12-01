@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11, <4.0"
 
 [[package]]
@@ -224,21 +224,7 @@ redis = [
 ]
 
 [[package]]
-name = "openrelik-worker-common"
-version = "0.16.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "debugpy" },
-    { name = "redis" },
-    { name = "structlog" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/08/495a78b947e699238c6522bd55899e2e7e41a6b4aaa2cf2acd107f97676c/openrelik_worker_common-0.16.0.tar.gz", hash = "sha256:893f8b2b4eaa912e91f7b7b27bd67c1a45c41b5e9c77181e14a7844d13c50793", size = 19027, upload-time = "2025-06-30T19:52:52.067Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/39/87ca2b64684ea5ae12d5fef15472010acbac3904191c9e7ed7e4aa44cf06/openrelik_worker_common-0.16.0-py3-none-any.whl", hash = "sha256:13b8c1cf0f2dca1933139501ecec607b54ccc35c14d2479a32d4b854f810f245", size = 25081, upload-time = "2025-06-30T19:52:50.188Z" },
-]
-
-[[package]]
-name = "openrelik-worker-template-worker-name"
+name = "openrelik-worker-clamav"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
@@ -264,6 +250,20 @@ test = [
     { name = "pytest" },
     { name = "pytest-cov", specifier = ">=5.0.0,<6.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4.0.0" },
+]
+
+[[package]]
+name = "openrelik-worker-common"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "debugpy" },
+    { name = "redis" },
+    { name = "structlog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/08/495a78b947e699238c6522bd55899e2e7e41a6b4aaa2cf2acd107f97676c/openrelik_worker_common-0.16.0.tar.gz", hash = "sha256:893f8b2b4eaa912e91f7b7b27bd67c1a45c41b5e9c77181e14a7844d13c50793", size = 19027, upload-time = "2025-06-30T19:52:52.067Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/39/87ca2b64684ea5ae12d5fef15472010acbac3904191c9e7ed7e4aa44cf06/openrelik_worker_common-0.16.0-py3-none-any.whl", hash = "sha256:13b8c1cf0f2dca1933139501ecec607b54ccc35c14d2479a32d4b854f810f245", size = 25081, upload-time = "2025-06-30T19:52:50.188Z" },
 ]
 
 [[package]]

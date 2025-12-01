@@ -2,11 +2,11 @@
 publish: false
 
 # Worker Metadata. This section is required.
-display_name: User-friendly name of your worker
-description: Brief description of your workers purpose and functionality.
+display_name: ClamAV Velociraptor Scan
+description: Scan Velociraptor collection archives with ClamAV and return structured findings.
 
 # Optional: Third-Party Tools Used by the Worker.
 tools:
-  - display_name: User-friendly name of the tool
-    description: Brief description of the tool
-    url: http://example.com # URL for more info about the tool
+  - display_name: ClamAV
+    description: Open-source antivirus engine used for file scanning.
+    url: https://github.com/Cisco-Talos/clamav
