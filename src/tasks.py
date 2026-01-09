@@ -2,6 +2,7 @@ import json
 import subprocess
 import tarfile
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional, Tuple
@@ -23,6 +24,13 @@ TASK_METADATA = {
     "description": "Scan Velociraptor collection archives with ClamAV.",
     "task_config": [
         {
+            "name": "update_signatures",
+            "label": "Update signatures before scan",
+            "description": "Fetch the latest ClamAV signatures before running the scan.",
+            "type": "checkbox",
+            "required": False,
+        },
+        {
             "name": "include_clean",
             "label": "Include clean files in report",
             "description": "When enabled, the report will list clean files in addition to infected ones.",
@@ -35,6 +43,8 @@ TASK_METADATA = {
 log_root = Logger()
 logger = log_root.get_logger(__name__, get_task_logger(__name__))
 
+CLAMAV_DB_DIRS = [Path("/var/lib/clamav")]
+
 
 def _coerce_bool(value) -> bool:
     if isinstance(value, bool):
@@ -42,6 +52,12 @@ def _coerce_bool(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+def _first_value(value):
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
 
 
 def _safe_extract_tar(tar: tarfile.TarFile, destination: Path) -> None:
@@ -93,8 +109,10 @@ def _send_progress(
     processed: int,
     infected: int,
     current_path: Optional[str],
+    signature_status: Optional[Dict[str, Optional[str]]] = None,
 ) -> None:
     percent = round((processed / total_files) * 100, 2) if total_files else None
+    signature_status_text = _format_signature_status(signature_status or {})
     task.send_event(
         "task-progress",
         data={
@@ -103,9 +121,101 @@ def _send_progress(
             "total": total_files,
             "percent": percent,
             "infected": infected,
-        "current_path": current_path,
-    },
-)
+            "current_path": current_path,
+            "signature_status": signature_status_text,
+            "signature_updated_at": (signature_status or {}).get("updated_at"),
+            "signature_files": (signature_status or {}).get("files"),
+        },
+    )
+
+
+def _get_signature_status(db_dir: Optional[Path] = None) -> Dict[str, Optional[str]]:
+    target_dir = db_dir
+    if target_dir is None:
+        for candidate in CLAMAV_DB_DIRS:
+            if candidate.exists():
+                target_dir = candidate
+                break
+
+    status: Dict[str, Optional[str]] = {
+        "db_dir": str(target_dir) if target_dir else None,
+        "updated_at": None,
+        "files": None,
+    }
+
+    if target_dir is None:
+        return status
+
+    candidates = [
+        "main.cvd",
+        "main.cld",
+        "daily.cvd",
+        "daily.cld",
+        "bytecode.cvd",
+        "bytecode.cld",
+    ]
+
+    newest_mtime = None
+    file_entries = []
+    for name in candidates:
+        path = target_dir / name
+        if not path.exists():
+            continue
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            continue
+        file_entries.append({"name": name, "updated_at": mtime.strftime("%Y-%m-%d %H:%M:%S UTC")})
+        if newest_mtime is None or mtime > newest_mtime:
+            newest_mtime = mtime
+
+    if newest_mtime:
+        status["updated_at"] = newest_mtime.strftime("%Y-%m-%d %H:%M:%S UTC")
+    if file_entries:
+        status["files"] = ", ".join(entry["name"] for entry in file_entries)
+
+    return status
+
+
+def _format_signature_status(status: Dict[str, Optional[str]]) -> Optional[str]:
+    updated_at = status.get("updated_at")
+    files = status.get("files")
+    parts = []
+    if updated_at:
+        parts.append(f"Updated: {updated_at}")
+    if files:
+        parts.append(f"Files: {files}")
+    if not parts:
+        return None
+    return " | ".join(parts)
+
+
+def _update_signatures(task, task_config: Optional[dict]) -> None:
+    raw_update = _first_value((task_config or {}).get("update_signatures"))
+    if not _coerce_bool(raw_update):
+        return
+
+    task.send_event("task-progress", data={"message": "Updating ClamAV signatures..."})
+    result = subprocess.run(
+        ["freshclam", "--stdout"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        logger.warning(
+            "ClamAV signature update failed (code %s). STDERR: %s",
+            result.returncode,
+            (result.stderr or "").strip() or "<empty>",
+        )
+        task.send_event(
+            "task-progress",
+            data={"message": "Signature update failed; continuing scan."},
+        )
+        return
+
+    task.send_event("task-progress", data={"message": "Signature update complete."})
 
 
 def _write_infected_only_report(output_path: str, display_name: str, scan_result: Dict):
@@ -269,11 +379,17 @@ def command(
     logger.info(f"Starting {TASK_NAME} for workflow {workflow_id}")
 
     input_files = get_input_files(pipe_result, input_files or [])
-    include_clean = _coerce_bool((task_config or {}).get("include_clean"))
+    include_clean = _coerce_bool(_first_value((task_config or {}).get("include_clean")))
     output_files = []
 
     if not input_files:
         logger.warning("No input files supplied to ClamAV worker.")
+
+    _update_signatures(self, task_config)
+    signature_status = _get_signature_status()
+    signature_status_text = _format_signature_status(signature_status)
+    if signature_status_text:
+        self.send_event("task-progress", data={"message": f"ClamAV signatures: {signature_status_text}"})
 
     with TemporaryDirectory(prefix="clamav_", dir=output_path) as staging_dir:
         staging_path = Path(staging_dir)
@@ -293,6 +409,7 @@ def command(
                     processed,
                     infected,
                     current.get("path") if current else None,
+                    signature_status,
                 ),
             )
 
@@ -308,6 +425,7 @@ def command(
                     {
                         "input_file": str(source_path),
                         "scan_target": str(scan_target),
+                        "signature_status": signature_status,
                         **scan_result,
                     },
                     fh,
@@ -325,5 +443,7 @@ def command(
         command="clamscan",
         meta={
             "include_clean": include_clean,
+            "signature_updated_at": signature_status.get("updated_at"),
+            "signature_files": signature_status.get("files"),
         },
     )
